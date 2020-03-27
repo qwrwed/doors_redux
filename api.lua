@@ -1,5 +1,5 @@
 --------------------------------------------------------
--- Minetest :: Doors Redux Mod v1.0 (doors)
+-- Minetest :: Doors Redux Mod v1.1 (doors)
 --
 -- See README.txt for licensing and other information.
 -- Copyright (c) 2016-2020, Leslie E. Krause
@@ -147,14 +147,27 @@ local function get_door_transform( state, param2, toggle_open, switch_type, swit
 end
 
 ---------------------------------
+-- is_door_protected( )
+---------------------------------
+
+local function is_door_protected( pos, ndef, player_name )
+	local owner = minetest.get_meta( pos ):get_string( "doors_owner" )
+
+	if minetest.get_player_privs( player_name ).protection_bypass then return false end
+
+	return ndef.protected and player_name ~= owner
+end
+
+---------------------------------
 -- is_door_locked( )
 ---------------------------------
 
-local function is_door_locked( pos, ndef, meta, player_name )
+local function is_door_locked( pos, ndef, player_name )
+	local meta = minetest.get_meta( pos )
 	local locking_mode = meta:get_int( "locking_mode" )
-	local owner = meta:get_string( "doors_owner" )	-- eventually deprecate this and change to "owner"
+	local owner = meta:get_string( "doors_owner" )
 
-	if minetest.check_player_privs( player_name, "protection_bypass" ) then return false end
+	if minetest.get_player_privs( player_name ).protection_bypass then return false end
 
 	if locking_mode == doors.LOCKING_MODE_UNDEFINED then
 		if ndef.protected and player_name ~= owner then
@@ -215,8 +228,8 @@ local function toggle_door( pos, node, player )
 	local ndef = minetest.registered_nodes[ node.name ]
 	local closing_mode = meta:get_int( "closing_mode" )
 
-	if player and is_door_locked( pos, ndef, meta, player:get_player_name( ) ) then
-		minetest.sound_play( "doors_door_locked", { pos = pos, gain = 1.0, max_hear_distance = 10 } )
+	if player and is_door_locked( pos, ndef, player:get_player_name( ) ) then
+		minetest.sound_play( ndef.sound_locked, { pos = pos, gain = 0.3, max_hear_distance = 10 } )
 		return false
 	end
 
@@ -268,8 +281,8 @@ function toggle_trapdoor( pos, node, player )
 	local ndef = minetest.registered_nodes[ node.name ]
 	local closing_mode = meta:get_int( "closing_mode" )
 
-	if player and is_trapdoor_locked( pos, ndef, meta, player:get_player_name( ) ) then
-		minetest.sound_play( "doors_door_locked", { pos = pos, gain = 1.0, max_hear_distance = 10 } )
+	if player and is_trapdoor_locked( pos, ndef, player:get_player_name( ) ) then
+		minetest.sound_play( ndef.sound_locked, { pos = pos, gain = 0.3, max_hear_distance = 10 } )
 		return false
 	end
 
@@ -311,23 +324,31 @@ local function on_adjust_door( pos, node, player, mode )
 	local ndef = minetest.registered_nodes[ node.name ]
 	local locking_mode = meta:get_int( "locking_mode" )
 	local closing_mode = meta:get_int( "closing_mode" )
+	local player_name = player:get_player_name( )
+
+	if is_door_protected( pos, ndef, player_name ) then return false end
 
 	if mode == doors.ADJUST_LOCKING and ndef.is_lockable and locking_mode > 0 then
 		local mode_defs = { "unlocked", "locked", "shared" }
 
 		locking_mode = locking_mode % 3 + 1
-		minetest.chat_send_player( player:get_player_name( ), "Door locking is set to " .. mode_defs[ locking_mode ] .. "." )
+		minetest.chat_send_player( player_name, "Door locking is set to " .. mode_defs[ locking_mode ] .. "." )
 		meta:set_int( "locking_mode", locking_mode )
+
+		return true
 
 	elseif mode == doors.ADJUST_CLOSING and ndef.is_closable and closing_mode > 0 then
 		local mode_defs = { "manual", "auto-close", "hold-open" }
 
 		closing_mode = closing_mode % 3 + 1
-		minetest.chat_send_player( player:get_player_name( ), "Door closing is set to " .. mode_defs[ closing_mode ] .. "." )
+		minetest.chat_send_player( player_name, "Door closing is set to " .. mode_defs[ closing_mode ] .. "." )
 		meta:set_int( "closing_mode", closing_mode )
-	else
-		minetest.chat_send_player( player:get_player_name( ), "This door does not provide locking and/or closing adjustments." )
+
+		return true
 	end
+
+	minetest.chat_send_player( player_name, "This door does not provide locking and/or closing adjustments." )
+	return false
 end
 
 local on_adjust_trapdoor = on_adjust_door
@@ -341,25 +362,28 @@ local function on_rotate_door( pos, node, player, mode )
 	local meta = minetest.get_meta( pos )
 	local state = meta:get_int( "state" )
 
-	if mode == screwdriver.ROTATE_FACE and ndef.can_center and ndef.can_offset then
-		-- alternate type between center <-> offset
-		local is_open, state, transform = get_door_transform( state, node.param2, false, true, false, false )
+	if is_door_protected( pos, ndef, player:get_player_name( ) ) then return false end
 
-		minetest.swap_node( pos, {
-			name = ndef.base_name .. transform.suffix, param2 = transform.param2
-		} )
-
-		meta:set_int( "state", state )
-	else
+	if mode == screwdriver.ROTATE_FACE then
 		-- alternate hand between left <-> right
 		local is_open, state, transform = get_door_transform( state, node.param2, false, false, true, false )
 
-		minetest.swap_node( pos, {
-			name = ndef.base_name .. transform.suffix, param2 = transform.param2
-		} )
-
+		minetest.swap_node( pos, { name = ndef.base_name .. transform.suffix, param2 = transform.param2 } )
 		meta:set_int( "state", state )
+
+		return true
+
+	elseif mode == screwdriver.ROTATE_AXIS and ndef.can_center and ndef.can_offset then
+		-- alternate type between center <-> offset
+		local is_open, state, transform = get_door_transform( state, node.param2, false, true, false, false )
+
+		minetest.swap_node( pos, { name = ndef.base_name .. transform.suffix, param2 = transform.param2 } )
+		meta:set_int( "state", state )
+
+		return true
 	end
+
+	return false
 end
 
 local on_rotate_trapdoor = function ( ) end
@@ -615,6 +639,9 @@ function doors.register_door( name, def )
 	if not def.sound_close then
 		def.sound_close = "doors_door_close"
 	end
+	if not def.sound_locked then
+		def.sound_locked = "doors_door_locked"
+	end
 
 	-- define the placement types
 
@@ -641,21 +668,20 @@ function doors.register_door( name, def )
 		toggle_door( pos, node, player )
 		return itemstack
 	end
-	def.after_dig_node = function ( pos, node, meta, player )
-		minetest.remove_node( vector.offset_y( pos ) )
-		nodeupdate( vector.offset_y( pos ) )
-	end
 	def.on_destruct = function( pos )
 		minetest.remove_node( vector.offset_y( pos ) )		-- hidden node
+		minetest.check_for_falling( vector.offset_y( pos ) )
 	end
 
 	if def.protected then
 		def.can_dig = function ( pos, player )
 			local player_name = player:get_player_name( )
-			if minetest.get_player_privs( player_name ).protection_bypass then
+			if is_door_protected( pos, def, player_name ) then
+				minetest.record_protection_violation( pos, player_name )
+				return false
+			else
 				return true
 			end
-			return minetest.get_meta( pos ):get_string( "doors_owner" ) == player_name
 		end
 		def.on_blast = function( ) end
 	else
@@ -732,6 +758,9 @@ function doors.register_trapdoor( name, def )
 	if not def.sound_close then
 		def.sound_close = "doors_door_close"
 	end
+	if not def.sound_locked then
+		def.sound_locked = "doors_door_locked"
+	end
 
 	-- define the placement types
 
@@ -754,10 +783,12 @@ function doors.register_trapdoor( name, def )
 	if def.protected then
 		def.can_dig = function ( pos, player )
 			local player_name = player:get_player_name( )
-			if minetest.get_player_privs( player_name ).protection_bypass then
+			if is_door_protected( pos, def, player_name ) then
+				minetest.record_protection_violation( pos, player_name )
+				return false
+			else
 				return true
 			end
-			return minetest.get_meta( pos ):get_string( "doors_owner" ) == player_name
 		end
 		def.after_place_node = function ( pos, player, itemstack, pointed_thing )
 			local player_name = player:get_player_name( )
@@ -896,20 +927,16 @@ local function handle_wrench( itemstack, player, pointed_thing, mode, uses )
 
 	if minetest.is_protected( pos, player_name ) then
 		minetest.record_protection_violation( pos, player_name )
-		return nil
-	elseif ndef.protected and minetest.get_meta( pos ):get_string( "doors_owner" ) ~= player_name then
-		return nil
+		return
 	end
 
 	if ndef.on_adjust then
-		ndef.on_adjust( vector.new( pos ), { name = node.name, param1 = node.param1, param2 = node.param2 }, player, mode )
+		local has_wear = ndef.on_adjust( vector.new( pos ), { name = node.name, param1 = node.param1, param2 = node.param2 }, player, mode )
 
-		if not minetest.setting_getbool( "creative_mode" ) then
+		if not minetest.setting_getbool( "creative_mode" ) and has_wear then
 			itemstack:add_wear( 65535 / config.wrench_usage_limit - 1 )
 		end
 	end
-
-	return itemstack
 end
 
 --------------------
