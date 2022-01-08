@@ -603,6 +603,10 @@ end
 
 function doors.register_door( name, def )
 
+	if not name:find(":") then
+		name = "doors:" .. name
+	end
+
 	register_door_craftitem( name, def )
 
 	-- define the basic properties
