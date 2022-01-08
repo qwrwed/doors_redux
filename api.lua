@@ -22,6 +22,10 @@ doors.CLOSING_MODE_HOLDOPEN = 3
 doors.ADJUST_LOCKING = 1
 doors.ADJUST_CLOSING = 2
 
+local offset_y = function ( pos, y )
+	return { x = pos.x, y = pos.y + ( y or 1 ), z = pos.z }
+end
+
 minetest.register_node( "doors:hidden", {
 	description = "Hidden Door Segment",
 	drawtype = "nodebox",  -- cannot use air-like, since falling nodes would be stuck
@@ -269,7 +273,7 @@ local function toggle_door( pos, node, player )
 	minetest.swap_node( pos, { name = new_name, param2 = new_param2 } )
 	meta:set_int( "state", state )
 
---	update_door_hardware( vector.offset_y( pos ), state, param2 )
+--	update_door_hardware( offset_y( pos ), state, param2 )
 end
 
 ---------------------------------
@@ -533,7 +537,7 @@ local function register_door_craftitem( name, def )
 				end
 			end
 
-			local top_pos = vector.offset_y( pos )
+			local top_pos = offset_y( pos )
 			local top_node = minetest.get_node_or_nil( top_pos )
 			local top_ndef = top_node and minetest.registered_nodes[ top_node.name ]
 
@@ -673,8 +677,8 @@ function doors.register_door( name, def )
 		return itemstack
 	end
 	def.on_destruct = function( pos )
-		minetest.remove_node( vector.offset_y( pos ) )		-- hidden node
-		minetest.check_for_falling( vector.offset_y( pos ) )
+		minetest.remove_node( offset_y( pos ) )		-- hidden node
+		minetest.check_for_falling( offset_y( pos ) )
 	end
 
 	if def.protected then
@@ -691,7 +695,7 @@ function doors.register_door( name, def )
 	else
 		def.on_blast = function( pos, intensity )
 			minetest.remove_node( pos )			-- door node
-			minetest.remove_node( vector.offset_y( pos ) )	-- hidden node
+			minetest.remove_node( offset_y( pos ) )	-- hidden node
 			return { name }
 		end
 	end
