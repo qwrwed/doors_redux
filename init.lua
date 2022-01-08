@@ -261,7 +261,7 @@ doors.register_door( "doors:door_dungeon2", {
 } )
 
 doors.register_door( "doors:door_steelpanel1", {
-	tiles = {{ name = "doors_door_steelpanel.png", backface_culling = true}},
+	tiles = {{ name = "doors_door_steelpanel1.png", backface_culling = true}},
 	description = "Steel Colonial Door",
 	inventory_image = "doors_item_steelpanel1.png",
 	protected = true,
